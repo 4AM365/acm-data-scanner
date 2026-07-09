@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACM Data Scanner</title>
+<style>
+  :root {
+    --bg: #111418; --panel: #1c2128; --border: #333a45;
+    --text: #e6e8eb; --dim: #8b949e; --accent: #3fb950; --accent-dim: #238636;
+    --chip-off: #21262d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 10px 16px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 16px; font-weight: 600; margin-right: auto; }
+  header label { font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  select, input[type=number] { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+  select { max-width: 320px; }
+  input[type=number] { width: 52px; text-align: center; }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  #left { flex: 3; display: flex; flex-direction: column; min-width: 0; padding: 14px; gap: 10px; }
+  #right { flex: 2; display: flex; flex-direction: column; min-width: 280px; max-width: 480px; border-left: 1px solid var(--border); padding: 14px; gap: 10px; }
+
+  #cameraWrap { position: relative; background: #000; border-radius: 10px; overflow: hidden; flex-shrink: 0; }
+  #video { display: none; } /* raw feed — rendered rotated onto #view */
+  #view { width: 100%; display: block; max-height: 52vh; object-fit: contain; background: #000; }
+  #guide { position: absolute; border: 2px solid var(--accent); border-radius: 8px; cursor: move; touch-action: none; }
+  #guide::after { content: 'drag to move · corner to resize'; position: absolute; top: -22px; left: 0; font-size: 12px; color: var(--accent); white-space: nowrap; }
+  #guideHandle { position: absolute; right: -9px; bottom: -9px; width: 18px; height: 18px; background: var(--accent); border-radius: 50%; cursor: nwse-resize; }
+  #previewWrap { display: none; }
+  #previewWrap .lbl { font-size: 12px; color: var(--dim); display: block; margin-bottom: 4px; }
+  #preview { max-width: 100%; max-height: 130px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+  #camMsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 14px; text-align: center; padding: 20px; }
+
+  #controls { display: flex; gap: 10px; align-items: center; }
+  button { border: none; border-radius: 8px; color: var(--text); background: var(--panel); border: 1px solid var(--border); padding: 10px 18px; font-size: 14px; cursor: pointer; }
+  button.primary { background: var(--accent-dim); border-color: var(--accent-dim); color: #fff; font-weight: 600; }
+  button.primary:hover { background: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  #scanBtn { padding: 12px 34px; font-size: 16px; }
+  #status { font-size: 13px; color: var(--dim); }
+  kbd { background: var(--chip-off); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 11px; color: var(--dim); }
+
+  #chips { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; overflow-y: auto; }
+  .chip { padding: 8px 14px; border-radius: 999px; font-size: 15px; font-family: ui-monospace, Consolas, monospace; border: 1px solid var(--border); background: var(--chip-off); color: var(--dim); cursor: pointer; }
+  .chip.on { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+  .chip.low { border-color: #d29922; } /* low OCR confidence — double-check before adding */
+  .chip.pattern.on { background: #1f6feb; border-color: #58a6ff; } /* matched a known format */
+  #resultActions { display: none; gap: 10px; }
+  #rawWrap summary { color: var(--dim); font-size: 13px; cursor: pointer; }
+  #raw { width: 100%; background: var(--panel); color: var(--dim); border: 1px solid var(--border); border-radius: 8px; padding: 8px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; min-height: 60px; margin-top: 6px; }
+
+  #right h2 { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  #right h2 span { color: var(--dim); font-weight: 400; font-size: 12px; margin-right: auto; }
+  #entries { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .entry { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-family: ui-monospace, Consolas, monospace; font-size: 14px; }
+  .entry span { flex: 1; user-select: all; overflow-wrap: anywhere; }
+  .entry .copyBtn { padding: 4px 9px; font-size: 13px; flex-shrink: 0; }
+  .entry.new { animation: flash 1.4s ease-out; }
+  @keyframes flash { from { background: var(--accent-dim); border-color: var(--accent); } }
+  #entries .empty { color: var(--dim); font-size: 13px; padding: 10px 2px; }
+  #logBtns { display: flex; gap: 8px; }
+
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--accent-dim); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ACM Data Scanner</h1>
+  <label>camera <select id="camSelect"></select></label>
+  <label>rotate <select id="rotSelect">
+    <option value="0">0°</option>
+    <option value="90">90° CW</option>
+    <option value="180">180°</option>
+    <option value="270">90° CCW</option>
+  </select></label>
+  <label>min digits <input id="minDigits" type="number" min="1" max="12" value="3"></label>
+  <label title="Binarize the image before OCR — helps low-contrast labels, can hurt with glare"><input type="checkbox" id="thresh" checked> threshold</label>
+  <label title="Continuously watch the guide box and log any TRK / 2V / AS matches automatically (needs GPU OCR)"><input type="checkbox" id="autoChk" checked> auto capture</label>
+</header>
+
+<main>
+  <div id="left">
+    <div id="cameraWrap">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="view"></canvas>
+      <div id="guide" style="display:none"><div id="guideHandle"></div></div>
+      <div id="camMsg">Starting camera…</div>
+    </div>
+    <div id="controls">
+      <button id="scanBtn" class="primary" disabled>Scan</button>
+      <span id="status"></span>
+      <span style="margin-left:auto"><kbd>Space</kbd> scan &nbsp; <kbd>Enter</kbd> add to log</span>
+    </div>
+    <div id="previewWrap">
+      <span class="lbl">what OCR sees — <span id="cropInfo"></span></span>
+      <canvas id="preview"></canvas>
+    </div>
+    <div id="chips"></div>
+    <div id="resultActions">
+      <button id="addBtn" class="primary">Add to log</button>
+      <button id="copySelBtn">Copy selection</button>
+    </div>
+    <details id="rawWrap" style="display:none">
+      <summary>raw OCR text</summary>
+      <textarea id="raw" readonly></textarea>
+    </details>
+  </div>
+
+  <div id="right">
+    <h2>Captured <span id="count"></span></h2>
+    <div id="entries"></div>
+    <div id="logBtns">
+      <button id="copyAllBtn" class="primary">Copy all</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script src="/vendor/tesseract/tesseract.min.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const video = $('video'), scanBtn = $('scanBtn'), statusEl = $('status');
+
+$('minDigits').value = localStorage.getItem('minDigits') || '3';
+$('minDigits').addEventListener('change', () => localStorage.setItem('minDigits', $('minDigits').value));
+
+function setStatus(msg) { statusEl.textContent = msg; }
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+// ---------- camera ----------
+let stream = null;
+
+// The raw <video> is hidden; every frame is drawn rotated onto #view, which is
+// the single source of truth for display, guide box, cropping, and OCR.
+const view = $('view');
+const viewCtx = view.getContext('2d');
+let rotation = parseInt(localStorage.getItem('rotation') ?? '270', 10); // degrees CW
+
+$('rotSelect').value = String(rotation);
+$('rotSelect').addEventListener('change', () => {
+  rotation = parseInt($('rotSelect').value, 10);
+  localStorage.setItem('rotation', String(rotation));
+});
+
+function renderLoop() {
+  if (video.videoWidth) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const swap = rotation === 90 || rotation === 270;
+    const cw = swap ? vh : vw, ch = swap ? vw : vh;
+    if (view.width !== cw || view.height !== ch) { view.width = cw; view.height = ch; }
+    viewCtx.save();
+    if (rotation === 90) { viewCtx.translate(cw, 0); viewCtx.rotate(Math.PI / 2); }
+    else if (rotation === 180) { viewCtx.translate(cw, ch); viewCtx.rotate(Math.PI); }
+    else if (rotation === 270) { viewCtx.translate(0, ch); viewCtx.rotate(-Math.PI / 2); }
+    viewCtx.drawImage(video, 0, 0);
+    viewCtx.restore();
+  }
+  requestAnimationFrame(renderLoop);
+}
+requestAnimationFrame(renderLoop);
+
+async function startCamera(deviceId) {
+  if (stream) for (const t of stream.getTracks()) t.stop();
+  $('camMsg').style.display = 'flex';
+  $('camMsg').textContent = 'Starting camera…';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        width: { ideal: 1920 }, height: { ideal: 1080 },
+      },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await video.play();
+    $('camMsg').style.display = 'none';
+    guideEl.style.display = 'block';
+    scanBtn.disabled = false;
+    setStatus(`camera feed ${video.videoWidth}×${video.videoHeight}`);
+    await populateCameras();
+  } catch (e) {
+    $('camMsg').textContent = 'Camera error: ' + e.message +
+      '\nCheck that no other app (e.g. depth-camera software) has the camera open, then pick a device above.';
+    scanBtn.disabled = true;
+    populateCameras().catch(() => {});
+  }
+}
+
+// Labels are only available after permission is granted, so this runs post-getUserMedia.
+async function populateCameras() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const cams = devices.filter((d) => d.kind === 'videoinput');
+  const sel = $('camSelect');
+  const current = stream?.getVideoTracks()[0]?.getSettings().deviceId;
+  sel.innerHTML = '';
+  cams.forEach((c, i) => {
+    const opt = document.createElement('option');
+    opt.value = c.deviceId;
+    opt.textContent = c.label || `Camera ${i + 1}`;
+    if (c.deviceId === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+$('camSelect').addEventListener('change', () => {
+  localStorage.setItem('cameraId', $('camSelect').value);
+  startCamera($('camSelect').value);
+});
+
+// ---------- guide box (drag to move, corner handle to resize) ----------
+const guideEl = $('guide');
+let gbox = JSON.parse(localStorage.getItem('guideBox') || 'null') || { x: 0.15, y: 0.34, w: 0.7, h: 0.32 };
+
+function layoutGuide() {
+  guideEl.style.left = gbox.x * 100 + '%';
+  guideEl.style.top = gbox.y * 100 + '%';
+  guideEl.style.width = gbox.w * 100 + '%';
+  guideEl.style.height = gbox.h * 100 + '%';
+}
+layoutGuide();
+
+let drag = null;
+guideEl.addEventListener('pointerdown', (e) => {
+  const r = $('cameraWrap').getBoundingClientRect();
+  drag = { resize: e.target.id === 'guideHandle', sx: e.clientX, sy: e.clientY, g0: { ...gbox }, r };
+  guideEl.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+guideEl.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = (e.clientX - drag.sx) / drag.r.width;
+  const dy = (e.clientY - drag.sy) / drag.r.height;
+  if (drag.resize) {
+    gbox.w = Math.min(Math.max(0.08, drag.g0.w + dx), 1 - gbox.x);
+    gbox.h = Math.min(Math.max(0.05, drag.g0.h + dy), 1 - gbox.y);
+  } else {
+    gbox.x = Math.min(Math.max(0, drag.g0.x + dx), 1 - gbox.w);
+    gbox.y = Math.min(Math.max(0, drag.g0.y + dy), 1 - gbox.h);
+  }
+  layoutGuide();
+});
+guideEl.addEventListener('pointerup', () => {
+  drag = null;
+  localStorage.setItem('guideBox', JSON.stringify(gbox));
+});
+
+// ---------- frame capture + preprocessing ----------
+// Crop the frame to the guide box so OCR only sees the target area.
+function grabFrame() {
+  const vw = view.width, vh = view.height;
+  const rect = view.getBoundingClientRect();
+  const guide = guideEl.getBoundingClientRect();
+  // object-fit: contain — letterboxed; compute scale and offsets.
+  const scale = Math.min(rect.width / vw, rect.height / vh);
+  const offX = (rect.width - vw * scale) / 2;
+  const offY = (rect.height - vh * scale) / 2;
+  const sx = Math.max(0, (guide.left - rect.left - offX) / scale);
+  const sy = Math.max(0, (guide.top - rect.top - offY) / scale);
+  const sw = Math.min(vw - sx, guide.width / scale);
+  const sh = Math.min(vh - sy, guide.height / scale);
+  const canvas = document.createElement('canvas');
+  // Upscale so the text lands near the recognizer's sweet spot,
+  // proportionally more for small crops.
+  const up = Math.min(4, Math.max(2, 1100 / sw));
+  canvas.width = Math.round(sw * up);
+  canvas.height = Math.round(sh * up);
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(view, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  // The GPU engine (EasyOCR) does its own normalization — feed it the raw crop.
+  // Only the Tesseract fallback benefits from stretch/threshold preprocessing.
+  if (!gpuEngine) preprocess(ctx, canvas);
+  // Show exactly what OCR receives — the fastest way to diagnose blur/exposure.
+  const pv = $('preview');
+  pv.width = canvas.width;
+  pv.height = canvas.height;
+  pv.getContext('2d').drawImage(canvas, 0, 0);
+  $('cropInfo').textContent = `feed ${vw}×${vh}, crop ${Math.round(sw)}×${Math.round(sh)} → ${canvas.width}×${canvas.height}`;
+  $('previewWrap').style.display = 'block';
+  return canvas;
+}
+
+// Grayscale → percentile contrast stretch → optional Otsu binarization.
+function preprocess(ctx, canvas) {
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  const n = d.length / 4;
+  const gray = new Uint8ClampedArray(n);
+  const hist = new Uint32Array(256);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    const g = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
+    gray[p] = g;
+    hist[g]++;
+  }
+  // Stretch the 2nd–98th percentile to full range — normalizes washed-out frames.
+  let lo = 0, hi = 255, acc = 0;
+  const loCut = n * 0.02, hiCut = n * 0.98;
+  for (let i = 0; i < 256; i++) {
+    acc += hist[i];
+    if (acc <= loCut) lo = i;
+    if (acc <= hiCut) hi = i;
+  }
+  const range = Math.max(1, hi - lo);
+  const stretched = new Uint8ClampedArray(n);
+  const hist2 = new Uint32Array(256);
+  for (let p = 0; p < n; p++) {
+    const v = Math.max(0, Math.min(255, ((gray[p] - lo) * 255 / range) | 0));
+    stretched[p] = v;
+    hist2[v]++;
+  }
+  let out = stretched;
+  if ($('thresh').checked) {
+    const t = otsu(hist2, n);
+    out = stretched.map((v) => (v > t ? 255 : 0));
+  }
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    d[i] = d[i + 1] = d[i + 2] = out[p];
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function otsu(hist, total) {
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, maxVar = 0, thresh = 127;
+  for (let i = 0; i < 256; i++) {
+    wB += hist[i];
+    if (!wB) continue;
+    const wF = total - wB;
+    if (!wF) break;
+    sumB += i * hist[i];
+    const mB = sumB / wB, mF = (sum - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > maxVar) { maxVar = v; thresh = i; }
+  }
+  return thresh;
+}
+
+// ---------- OCR ----------
+// Prefer the local GPU service (EasyOCR/CUDA); fall back to in-browser Tesseract.js.
+let gpuEngine = null;
+
+async function detectEngine() {
+  try {
+    const r = await fetch('/api/ocr/health');
+    const h = await r.json();
+    if (h.ok) {
+      gpuEngine = h;
+      setStatus(`GPU OCR ready (${h.device})`);
+      return;
+    }
+  } catch {}
+  gpuEngine = null;
+  setStatus('GPU OCR not running — using in-browser Tesseract');
+}
+
+async function gpuRecognize(canvas) {
+  const image = canvas.toDataURL('image/png').split(',')[1];
+  const res = await fetch('/api/ocr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image }),
+  });
+  if (!res.ok) throw new Error((await res.json()).error || 'HTTP ' + res.status);
+  return res.json();
+}
+
+let workerPromise = null;
+
+async function getWorker() {
+  if (!workerPromise) {
+    workerPromise = (async () => {
+      let langPath = '/tessdata';
+      try {
+        const head = await fetch('/tessdata/eng.traineddata.gz', { method: 'HEAD' });
+        if (!head.ok) langPath = 'https://tessdata.projectnaptha.com/4.0.0';
+      } catch { langPath = 'https://tessdata.projectnaptha.com/4.0.0'; }
+      const worker = await Tesseract.createWorker('eng', 1, {
+        workerPath: '/vendor/tesseract/worker.min.js',
+        corePath: '/vendor/tesseract-core',
+        langPath,
+        logger: (m) => {
+          if (m.status === 'recognizing text') setStatus(`Reading… ${Math.round(m.progress * 100)}%`);
+          else setStatus(m.status + '…');
+        },
+      });
+      // PSM 6 (single uniform block) — far more stable on labels than auto layout.
+      await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      return worker;
+    })();
+    workerPromise.catch(() => { workerPromise = null; });
+  }
+  return workerPromise;
+}
+
+async function scan() {
+  if (scanBtn.disabled || ocrBusy) return;
+  ocrBusy = true;
+  scanBtn.disabled = true;
+  try {
+    const frame = grabFrame();
+    if (gpuEngine) {
+      try {
+        setStatus('Reading (GPU)…');
+        const r = await gpuRecognize(frame);
+        setStatus(`${r.device} · ${r.ms}ms`);
+        showResults(r.items.map((i) => i.text).join('\n'), r.items);
+        return;
+      } catch (e) {
+        // Service died mid-session — drop to Tesseract for this and future scans.
+        gpuEngine = null;
+        setStatus('GPU OCR failed (' + e.message + ') — falling back to Tesseract');
+        preprocess(frame.getContext('2d'), frame);
+      }
+    }
+    const worker = await getWorker();
+    const { data } = await worker.recognize(frame);
+    showResults(data.text || '');
+    setStatus('');
+  } catch (e) {
+    setStatus('OCR failed: ' + e.message);
+  } finally {
+    scanBtn.disabled = false;
+    ocrBusy = false;
+  }
+}
+
+// ---------- results ----------
+// Known formats — matched against raw OCR text with grouping preserved.
+// Digit positions tolerate common OCR confusions, fixed by fixDigits below.
+const DIGITISH = '[0-9OQDILZSBG§&|]';
+const PATTERNS = [
+  {
+    // Case numbers: 8 digits, dash, 4-digit year (04332910-2026)
+    name: 'CASE',
+    re: new RegExp(`(?<!${DIGITISH})(${DIGITISH}{8})-(${DIGITISH}{4})(?!${DIGITISH})`, 'g'),
+    fmt: (m) => {
+      const num = healDigits(m[1], 8), year = healDigits(m[2], 4);
+      return num && year && /^20\d\d$/.test(year) ? `${num}-${year}` : null;
+    },
+  },
+  {
+    // Grouped tracking numbers: 3–4 space/dash-separated groups of 4 digits
+    name: 'TRK',
+    re: new RegExp(`(?:TRK#?\\s*)?((?:${DIGITISH}{4}[ -]){2,3}${DIGITISH}{4})(?!${DIGITISH})`, 'g'),
+    fmt: (m) => fixDigits(m[1]).replace(/-/g, ' ').replace(/\s+/g, ' '),
+  },
+  {
+    // AS tags: AS + all digits (AS12045, healed), or AS + 14 alphanumerics
+    // verbatim (AS4744E050116592, AS8831KR4013U7XM — mixed, so no healing).
+    name: 'AS',
+    re: /\bAS([A-Z0-9§&|]{5,})\b/g,
+    fmt: (m) => {
+      const tail = m[1];
+      if (new RegExp(`^${DIGITISH}+$`).test(tail)) return 'AS' + fixDigits(tail);
+      return tail.length === 14 && /^[A-Z0-9]+$/.test(tail) ? 'AS' + tail : null;
+    },
+  },
+  {
+    // 2V / 2L codes: prefix + 10 digits (2V4916797431, 2L8920208011)
+    name: '2V',
+    re: new RegExp(`\\b2([VL])(${DIGITISH}{10})(?!${DIGITISH})`, 'g'),
+    fmt: (m) => {
+      const d = healDigits(m[2], 10);
+      return d ? '2' + m[1] + d : null;
+    },
+  },
+  {
+    // TF serials: TF + 2 digits + letter + 9 digits (TF17J195501148)
+    name: 'TF',
+    re: new RegExp(`\\bTF(${DIGITISH}{2})([A-Z])(${DIGITISH}{9})(?!${DIGITISH})`, 'g'),
+    fmt: (m) => {
+      const a = healDigits(m[1], 2), b = healDigits(m[3], 9);
+      return a && b ? `TF${a}${m[2]}${b}` : null;
+    },
+  },
+  {
+    // Truck numbers (often handwritten): SSXXXXS — letter letter 4×digit letter.
+    // Any 7-char token is positionally healed toward that shape, then validated.
+    name: 'TRUCK',
+    re: /(?<![A-Z0-9§&|])([A-Z0-9§&|]{7})(?![A-Z0-9§&|])/g,
+    fmt: (m) => {
+      const t = m[1];
+      if (/^2V/.test(t) || new RegExp(`^AS${DIGITISH}+$`).test(t)) return null; // owned by other formats
+      // Require a real letter in at least one letter slot — otherwise a run of
+      // 7 plain digits would "heal" into a phantom truck number.
+      if (!/[A-Z]/.test(t[0] + t[1] + t[6])) return null;
+      const out = [...t].map((c, i) => (i < 2 || i === 6 ? (LETTER_FIX[c] ?? c) : (DIGIT_FIX[c] ?? c))).join('');
+      return /^[A-Z]{2}\d{4}[A-Z]$/.test(out) ? out : null;
+    },
+  },
+  {
+    // 16-char serials: mostly digits but letters are legitimate
+    // (1325177B07052167) — captured verbatim, never healed.
+    name: 'SERIAL16',
+    re: /(?<![A-Z0-9§&|])([A-Z0-9]{16})(?![A-Z0-9§&|])/g,
+    fmt: (m) => ((m[1].match(/[0-9]/g) || []).length >= 12 ? m[1] : null),
+  },
+  // Bare digit runs: 14 (serials), 12 (unspaced tracking), 6 (mileage).
+  // Hard token boundaries (no adjacent alphanumerics) so runs embedded in
+  // codes like SD4821K or AS12045 can't "heal" into phantom numbers, and at
+  // most 2 healed characters — a mostly-letters blob is not a number.
+  ...[14, 12, 6].map((len) => ({
+    name: `NUM${len}`,
+    re: new RegExp(`(?<![A-Z0-9§&|])(${DIGITISH}{${len}})(?![A-Z0-9§&|])`, 'g'),
+    fmt: (m) => {
+      if (/^2[VL]/.test(m[1])) return null; // whole token is a 2V/2L code
+      if ((m[1].match(/[^0-9]/g) || []).length > 2) return null;
+      return healDigits(m[1], len);
+    },
+  })),
+];
+
+// Map OCR confusables to digits — only used where the format expects a digit.
+const DIGIT_FIX = { O: '0', Q: '0', D: '0', I: '1', L: '1', '|': '1', Z: '2', S: '5', B: '8', G: '6', '§': '8', '&': '8' };
+// And the reverse, where the format expects a letter.
+const LETTER_FIX = { 0: 'O', 1: 'I', 2: 'Z', 4: 'A', 5: 'S', 6: 'G', 7: 'T', 8: 'B', '§': 'S', '&': 'S', '|': 'I' };
+function fixDigits(s) {
+  return s.replace(/./g, (c) => DIGIT_FIX[c] ?? c);
+}
+// Heal confusables and require the result to be exactly `len` digits.
+function healDigits(s, len) {
+  const d = fixDigits(s);
+  return new RegExp(`^\\d{${len}}$`).test(d) ? d : null;
+}
+
+function extractPatterns(text) {
+  const up = text.toUpperCase();
+  const hits = [];
+  const seen = new Set();
+  for (const p of PATTERNS) {
+    p.re.lastIndex = 0;
+    let m;
+    while ((m = p.re.exec(up))) {
+      const v = p.fmt(m);
+      if (!v) continue; // candidate failed format validation
+      if (!seen.has(v)) {
+        seen.add(v);
+        hits.push({ token: v, pattern: p.name });
+      }
+    }
+  }
+  return hits;
+}
+
+function extractTokens(text) {
+  const minDigits = parseInt($('minDigits').value, 10) || 1;
+  const tokens = text.match(/[A-Za-z0-9][A-Za-z0-9./-]*/g) || [];
+  const seen = new Set();
+  return tokens.filter((t) => {
+    const digits = (t.match(/[0-9]/g) || []).length;
+    if (digits < minDigits || seen.has(t)) return false;
+    seen.add(t);
+    return true;
+  });
+}
+
+function showResults(text, gpuItems) {
+  const chips = $('chips');
+  chips.innerHTML = '';
+  const fullText = gpuItems ? gpuItems.map((i) => i.text).join('\n') : text;
+  const patterns = extractPatterns(fullText);
+  // With GPU results, carry each region's confidence onto its tokens.
+  let entries;
+  if (gpuItems) {
+    const seen = new Set();
+    entries = [];
+    for (const it of gpuItems) {
+      for (const tok of extractTokens(it.text)) {
+        if (!seen.has(tok)) { seen.add(tok); entries.push({ token: tok, conf: it.conf }); }
+      }
+    }
+  } else {
+    entries = extractTokens(text).map((t) => ({ token: t }));
+  }
+  // Drop generic tokens already covered by a pattern hit (e.g. "8738" inside
+  // a matched tracking number).
+  entries = entries.filter(({ token }) => !patterns.some((p) => p.token.includes(fixDigits(token.toUpperCase()))));
+  for (const { token, pattern } of patterns) {
+    const el = document.createElement('button');
+    el.className = 'chip pattern on';
+    el.textContent = token;
+    el.title = `matched ${pattern} format`;
+    el.onclick = () => el.classList.toggle('on');
+    chips.appendChild(el);
+  }
+  for (const { token, conf } of entries) {
+    const el = document.createElement('button');
+    // When known formats are present, leftover tokens are probably noise —
+    // show them deselected but one click away.
+    el.className = 'chip' + (patterns.length ? '' : ' on') + (conf !== undefined && conf < 0.5 ? ' low' : '');
+    el.textContent = token;
+    if (conf !== undefined) el.title = `confidence ${Math.round(conf * 100)}%`;
+    el.onclick = () => el.classList.toggle('on');
+    chips.appendChild(el);
+  }
+  const rawText = gpuItems
+    ? gpuItems.map((i) => `${i.text}   (${Math.round(i.conf * 100)}%${i.engine === 'trocr' ? ' ✍' : ''})`).join('\n')
+    : text.trim();
+  $('raw').value = rawText;
+  $('rawWrap').style.display = rawText ? 'block' : 'none';
+  const total = patterns.length + entries.length;
+  $('resultActions').style.display = total ? 'flex' : 'none';
+  if (!total) setStatus(rawText ? 'No numbers found — see raw text.' : 'Nothing recognized — move closer / add light.');
+}
+
+function selectedItems() {
+  return [...document.querySelectorAll('.chip.on')].map((el) => el.textContent);
+}
+
+async function addToLog() {
+  const items = selectedItems();
+  if (!items.length) return toast('nothing selected');
+  try {
+    const res = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    toast(`Added ${items.length} item${items.length > 1 ? 's' : ''} ✓`);
+    $('chips').innerHTML = '';
+    $('resultActions').style.display = 'none';
+    $('rawWrap').style.display = 'none';
+  } catch (e) {
+    toast('Add failed: ' + e.message);
+  }
+}
+
+$('addBtn').onclick = addToLog;
+$('copySelBtn').onclick = async () => {
+  const items = selectedItems();
+  if (!items.length) return toast('nothing selected');
+  await navigator.clipboard.writeText(items.join('\n'));
+  toast('Copied ✓');
+};
+scanBtn.onclick = scan;
+
+// ---------- captured log panel ----------
+// scans.txt is the source of truth; rendered here newest-first with per-row copy.
+const logged = new Set(); // values already captured — auto-capture dedupes against this
+let logLines = [];
+
+async function refreshLog() {
+  const res = await fetch('/api/log');
+  const text = await res.text();
+  logLines = text.split('\n').filter(Boolean);
+  logged.clear();
+  for (const l of logLines) logged.add(l);
+  const wrap = $('entries');
+  // Rows beyond the previous count are new — flash them.
+  const prevCount = wrap.dataset.count === undefined ? logLines.length : +wrap.dataset.count;
+  wrap.dataset.count = logLines.length;
+  wrap.innerHTML = '';
+  if (!logLines.length) {
+    const d = document.createElement('div');
+    d.className = 'empty';
+    d.textContent = 'Nothing captured yet — hold a label in the guide box.';
+    wrap.appendChild(d);
+  }
+  logLines.forEach((line, i) => {
+    const row = document.createElement('div');
+    row.className = 'entry' + (i >= prevCount ? ' new' : '');
+    const val = document.createElement('span');
+    val.textContent = line;
+    const btn = document.createElement('button');
+    btn.className = 'copyBtn';
+    btn.textContent = '📋';
+    btn.title = 'copy to clipboard';
+    btn.onclick = async () => {
+      await navigator.clipboard.writeText(line);
+      btn.textContent = '✓';
+      setTimeout(() => (btn.textContent = '📋'), 900);
+    };
+    row.append(val, btn);
+    wrap.prepend(row); // newest on top
+  });
+  $('count').textContent = logLines.length ? `${logLines.length} captured` : '';
+}
+
+$('copyAllBtn').onclick = async () => {
+  await navigator.clipboard.writeText(logLines.join('\n'));
+  toast('Log copied ✓');
+};
+
+$('clearBtn').onclick = async () => {
+  if (!confirm('Clear the captured log?')) return;
+  await fetch('/api/clear', { method: 'POST' });
+};
+
+new EventSource('/events').addEventListener('update', refreshLog);
+refreshLog();
+
+// ---------- auto capture ----------
+// Continuously OCR the guide box and log fresh pattern matches, hands-free.
+let ocrBusy = false;
+
+function beep() {
+  try {
+    const ac = (beep.ctx ??= new AudioContext());
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.frequency.value = 880;
+    g.gain.value = 0.08;
+    o.connect(g).connect(ac.destination);
+    o.start();
+    o.stop(ac.currentTime + 0.12);
+  } catch {}
+}
+
+async function autoPass() {
+  if (!$('autoChk').checked || document.hidden || !gpuEngine || ocrBusy || !stream) return;
+  ocrBusy = true;
+  try {
+    const r = await gpuRecognize(grabFrame());
+    const fresh = [];
+    for (const it of r.items) {
+      if (it.conf < 0.4) continue; // don't auto-log shaky reads — manual Scan still shows them
+      for (const h of extractPatterns(it.text)) {
+        if (!logged.has(h.token) && !fresh.includes(h.token)) fresh.push(h.token);
+      }
+    }
+    if (fresh.length) {
+      for (const v of fresh) logged.add(v); // claim immediately so the next pass can't double-log
+      await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: fresh }),
+      });
+      beep();
+      toast(`captured ${fresh.join('  ·  ')}`);
+    }
+  } catch {}
+  ocrBusy = false;
+}
+setInterval(autoPass, 700);
+
+// ---------- keyboard ----------
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space') { e.preventDefault(); scan(); }
+  if (e.code === 'Enter') { e.preventDefault(); addToLog(); }
+});
+
+detectEngine();
+startCamera(localStorage.getItem('cameraId') || undefined);
+</script>
+</body>
+</html>

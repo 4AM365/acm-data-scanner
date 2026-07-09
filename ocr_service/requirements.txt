@@ -1,0 +1,7 @@
+# install torch/torchvision first from the CUDA index:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+easyocr
+fastapi
+uvicorn
+transformers<5   # 5.x breaks TrOCR processor loading
+sentencepiece

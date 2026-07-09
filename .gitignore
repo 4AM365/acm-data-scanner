@@ -1,0 +1,5 @@
+node_modules/
+ocr_service/.venv/
+scans.txt
+dist/
+public/tessdata/

@@ -1,0 +1,26 @@
+{
+  "name": "acm-data-scanner",
+  "version": "0.1.0",
+  "description": "Phone-camera OCR scanner for module numbers, served over LAN",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "postinstall": "node scripts/fetch-tessdata.js",
+    "build:exe": "pkg . --output dist/acm-data-scanner.exe"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "tesseract.js": "^5.1.0"
+  },
+  "pkg": {
+    "targets": [
+      "node18-win-x64"
+    ],
+    "assets": [
+      "public/**/*",
+      "node_modules/tesseract.js/dist/**/*",
+      "node_modules/tesseract.js-core/**/*"
+    ]
+  }
+}
